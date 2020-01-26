@@ -17,7 +17,9 @@ struct AcronymsController: RouteCollection {
 		acronymsRoutes.get("first", use: getFirstHandler) // "/api/acronyms/first"
 		acronymsRoutes.get("sorted", use: sortedHandler) // "/api/acronyms/sorted"
 		acronymsRoutes.get(Acronym.parameter, "user", use: getUserHandler) // "/api/acronyms/<ACRONYM ID>/user"
-	
+		acronymsRoutes.post(Acronym.parameter, "categories", Category.parameter, use: addCategoriesHandler) // "/api/acronyms/<ACRONYM ID>/categories/<CATEGORY ID>"
+		acronymsRoutes.get(Acronym.parameter, "categories", use: getCategoriesHandler) // "api/acronyms/<ACRONYM ID>/categories"
+		acronymsRoutes.delete(Acronym.parameter, "categories", Category.parameter, use: removeCategoriesHandler) // "api/acronyms/<ACRONYM ID>/categories/<CATEGORY ID>"
 	}
 	
 	//create a new acronym
@@ -92,9 +94,40 @@ struct AcronymsController: RouteCollection {
 	func getUserHandler(_ req: Request) throws -> Future<User> {
 		
 		return try req.parameters
-			.next(Acronym.self)
+			.next(Acronym.self) //fetch the acronym specified in the request's parameter
 			.flatMap(to: User.self) { acronym in
 			acronym.user.get(on: req)
+		}
+		
+	}
+	
+	
+	func addCategoriesHandler(_ req: Request) throws -> Future<HTTPStatus> {
+		
+		return try flatMap(to: HTTPStatus.self, req.parameters.next(Acronym.self),req.parameters.next(Category.self))
+		{ acronym, category in
+			return acronym.categories.attach(category, on: req).transform(to: .created) //statut 201
+		}
+		
+	}
+	
+	
+	func getCategoriesHandler(_ req: Request) throws -> Future<[Category]> {
+		
+		return try req.parameters
+			.next(Acronym.self)
+			.flatMap(to: [Category].self) { acronym in
+			try acronym.categories.query(on: req).all()
+		}
+		
+	}
+	
+	
+	func removeCategoriesHandler(_ req: Request) throws -> Future<HTTPStatus> {
+		
+		return try flatMap(to: HTTPStatus.self, req.parameters.next(Acronym.self),req.parameters.next(Category.self))
+		{ acronym, category in
+			return acronym.categories.detach(category, on: req).transform(to: .noContent) //statut 204
 		}
 		
 	}

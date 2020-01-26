@@ -17,8 +17,8 @@ final class Acronym: Codable {
 	
 }
 
+
 extension Acronym: PostgreSQLModel {}
-extension Acronym: Migration {}
 extension Acronym: Content {}
 extension Acronym: Parameter {}
 
@@ -26,6 +26,24 @@ extension Acronym {
 	
 	var user: Parent<Acronym, User> {
 		return parent(\.userID)
+	}
+	
+	var categories: Siblings<Acronym, Category, AcronymCategoryPivot> {
+		return siblings()
+	}
+	
+}
+
+
+extension Acronym: Migration {
+	
+	static func prepare(on connection: PostgreSQLConnection) -> Future<Void> {
+		
+		return Database.create(self, on: connection) { builder in
+			try addProperties(to: builder)
+			builder.reference(from: \.userID, to: \User.id)//sets up the foreign key
+		}
+		
 	}
 	
 }

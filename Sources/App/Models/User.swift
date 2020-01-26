@@ -21,6 +21,7 @@ extension User: Migration {}
 extension User: Parameter {}
 
 
+//for getting the acronyms of the user
 extension User {
 	
 	var acronyms: Children<User, Acronym> {

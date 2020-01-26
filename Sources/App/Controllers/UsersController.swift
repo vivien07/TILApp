@@ -11,7 +11,7 @@ struct UsersController: RouteCollection {
 		usersRoutes.post(User.self, use: createHandler) // "/api/users/"
 		usersRoutes.get(use: getAllHandler) // "/api/users/"
 		usersRoutes.get(User.parameter, use: getHandler) // "/api/users/<USER ID>"
-		usersRoutes.get(User.parameter, "acronyms", use: getAcronymsHandler)
+		usersRoutes.get(User.parameter, "acronyms", use: getAcronymsHandler) // "/api/users/<USER ID>/acronyms"
 
 	}
 	
