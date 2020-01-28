@@ -5,10 +5,16 @@ struct CategoriesController: RouteCollection {
   func boot(router: Router) throws {
 	
     let categoriesRoute = router.grouped("api", "categories")
-    categoriesRoute.post(Category.self, use: createHandler)
     categoriesRoute.get(use: getAllHandler)
     categoriesRoute.get(Category.parameter, use: getHandler) //"/api/categories/<CATEGORY ID>"
     categoriesRoute.get(Category.parameter, "acronyms", use: getAcronymsHandler) //"/api/categories/<CATEGORY ID>/acronyms"
+	
+	//protect categories creation
+	let tokenAuthMiddleware = User.tokenAuthMiddleware()
+	let guardAuthMiddleware = User.guardAuthMiddleware()
+	let protected = categoriesRoute.grouped(tokenAuthMiddleware, guardAuthMiddleware)
+	protected.post(Category.self, use: createHandler)
+	
 	
   }
 

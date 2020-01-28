@@ -48,12 +48,14 @@ struct WebsiteController: RouteCollection {
 	/*
 	func userHandler(_ req: Request) throws -> Future<View> {
 	
-	return try req.parameters.next(User.self).flatMap(to: View.self) { user in
-	return try user.acronyms.query(on: req).all().flatMap(to: View.self) { acronyms in
-	let context = UserContext(title: user.name, user: user, acronyms: acronyms)
-	return try req.view().render("user", context)
-	}
-	}
+	return try req.parameters
+		.next(User.self)
+		.flatMap(to: View.self) { user in
+		return try user.acronyms.query(on: req).all().flatMap(to: View.self) { acronyms in
+			let context = UserContext(title: user.name, user: user, acronyms: acronyms)
+			return try req.view().render("user", context)
+			}
+		}
 	
 	}
 	*/
