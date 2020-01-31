@@ -116,3 +116,7 @@ struct AdminUser: Migration {
 	
 }
 
+
+extension User: PasswordAuthenticatable { } //authenticate users with a username and password when they log in
+extension User: SessionAuthenticatable { } //allows the app to save and retrieve users as part of a session
+

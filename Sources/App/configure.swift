@@ -23,6 +23,7 @@ public func configure(_ config: inout Config, _ env: inout Environment,_ service
     var middlewares = MiddlewareConfig() // Create _empty_ middleware config
     middlewares.use(ErrorMiddleware.self) // Catches errors and converts to HTTP response
 	middlewares.use(FileMiddleware.self) // Serves files in the Public directory
+	middlewares.use(SessionsMiddleware.self) //Uses HTTP cookies to save and restore sessions for connecting clients
     services.register(middlewares)
 	
 	// Register the configured database to the database config.
@@ -45,5 +46,6 @@ public func configure(_ config: inout Config, _ env: inout Environment,_ service
 	commandConfig.useFluentCommands()
 	services.register(commandConfig)
 	config.prefer(LeafRenderer.self, for: ViewRenderer.self)
+	config.prefer(MemoryKeyedCache.self, for: KeyedCache.self)
 	
 }
