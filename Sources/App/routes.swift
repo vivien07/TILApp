@@ -15,4 +15,7 @@ public func routes(_ router: Router) throws {
 	let categoriesController = CategoriesController()
 	try router.register(collection: categoriesController)
 	
+	let imperialController = ImperialController()
+	try router.register(collection: imperialController)
+	
 }
