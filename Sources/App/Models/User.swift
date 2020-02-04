@@ -10,6 +10,7 @@ final class User: Codable { //A type that can convert itself into and out of an 
 	var username: String
 	var password: String
 	var email: String
+	var profilePicture: String? //contains the filename of the picture on disk
 	
 	init(name: String, username: String, password: String, email: String) {
 		self.name = name

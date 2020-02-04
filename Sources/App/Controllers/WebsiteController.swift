@@ -6,13 +6,14 @@ import SendGrid
 
 struct WebsiteController: RouteCollection {
 	
+	let imageFolder = "ProfilePictures/"
 	
 	func boot(router: Router) throws {
 		
 		let authSessionRoutes = router.grouped(User.authSessionsMiddleware()) //reads the cookie from the request and looks up the session ID in the app's session
 		authSessionRoutes.get(use: indexHandler) // "/"
 		authSessionRoutes.get("acronyms", Acronym.parameter, use: acronymHandler) // "/acronyms/<ACRONYM ID>"
-		//router.get("users", User.parameter, use: userHandler) // "/users/<USER ID>"
+		authSessionRoutes.get("users", User.parameter, use: userHandler) // "/users/<USER ID>"
 		authSessionRoutes.get("users", use: allUsersHandler) // "/users/"
 		authSessionRoutes.get("categories", use: allCategoriesHandler) // "/categories/"
 		authSessionRoutes.get("categories", Category.parameter, use: categoryHandler) // "/categories/<CATEGORY ID>"
@@ -25,6 +26,7 @@ struct WebsiteController: RouteCollection {
 		authSessionRoutes.post("forgottenPassword", use: forgottenPasswordPostHandler) // "/forgottenPassword"
 		authSessionRoutes.get("resetPassword", use: resetPasswordHandler) // "/resetPassword"
 		authSessionRoutes.post(ResetPasswordData.self, at: "resetPassword", use: resetPasswordPostHandler) // "/resetPassword"
+		authSessionRoutes.get("users", User.parameter, "profilePicture", use: getUsersProfilePictureHandler) // "/users/<USER_ID>/profilePicture"
 		
 		let protectedRoutes = authSessionRoutes.grouped(RedirectMiddleware<User>(path: "/login"))//unauthenticated users are redirected to "/login"
 		protectedRoutes.get("acronyms", "create", use: createAcronymHandler) // "/acronyms/create"
@@ -32,8 +34,11 @@ struct WebsiteController: RouteCollection {
 		protectedRoutes.get("acronyms", Acronym.parameter, "edit", use: editAcronymHandler) // "/acronyms/<ACRONYM ID>/edit"
 		protectedRoutes.post("acronyms", Acronym.parameter, "edit", use: editAcronymPostHandler) // "/acronyms/<ACRONYM ID>/edit"
 		protectedRoutes.post("acronyms", Acronym.parameter, "delete", use: deleteAcronymHandler) // "/acronyms/<ACRONYM ID>/delete"
+		protectedRoutes.get("users", User.parameter, "addProfilePicture" , use: addProfilePictureHandler) // "/users/<USER_ID>/addProfilePicture"
+		protectedRoutes.post("users", User.parameter, "addProfilePicture" , use: addProfilePicturePostHandler) // "/users/<USER_ID>/addProfilePicture"
 		
 	}
+	
 	
 	func indexHandler(_ req: Request) throws -> Future<View> {
 		
@@ -47,6 +52,7 @@ struct WebsiteController: RouteCollection {
 		}
 		
 	}
+	
 	
 	func acronymHandler(_ req: Request) throws -> Future<View> {
 		
@@ -63,20 +69,19 @@ struct WebsiteController: RouteCollection {
 		
 	}
 	
-	/*
+	
 	func userHandler(_ req: Request) throws -> Future<View> {
+		
+		return try req.parameters.next(User.self).flatMap(to: View.self) { user in
+			return try user.acronyms.query(on: req).all().flatMap(to: View.self) { acronyms in
+				let loggedInUser = try req.authenticated(User.self)
+				let context = UserContext(title: user.name, user: user, acronyms: acronyms, authenticatedUser: loggedInUser)
+				return try req.view().render("user", context)
+			}
+		}
+		
+	}
 	
-	return try req.parameters
-	.next(User.self)
-	.flatMap(to: View.self) { user in
-	return try user.acronyms.query(on: req).all().flatMap(to: View.self) { acronyms in
-	let context = UserContext(title: user.name, user: user, acronyms: acronyms)
-	return try req.view().render("user", context)
-	}
-	}
-	
-	}
-	*/
 	
 	func allUsersHandler(_ req: Request) throws -> Future<View> {
 		
@@ -88,6 +93,7 @@ struct WebsiteController: RouteCollection {
 		}
 		
 	}
+	
 	
 	func allCategoriesHandler(_ req: Request) throws -> Future<View> {
 		
@@ -109,6 +115,7 @@ struct WebsiteController: RouteCollection {
 		}
 		
 	}
+	
 	
 	func createAcronymHandler(_ req: Request) throws -> Future<View> {
 		
@@ -142,6 +149,7 @@ struct WebsiteController: RouteCollection {
 		
 	}
 	
+	
 	func editAcronymHandler(_ req: Request) throws -> Future<View> {
 		
 		return try req.parameters
@@ -153,6 +161,7 @@ struct WebsiteController: RouteCollection {
 		}
 		
 	}
+	
 	
 	func editAcronymPostHandler(_ req: Request) throws -> Future<Response> {
 		
@@ -190,6 +199,7 @@ struct WebsiteController: RouteCollection {
 		}
 		
 	}
+	
 	
 	func deleteAcronymHandler(_ req: Request) throws -> Future<Response> {
 		
@@ -343,6 +353,38 @@ struct WebsiteController: RouteCollection {
 		
 	}
 	
+	func addProfilePictureHandler(_ req: Request) throws -> Future<View> {
+		return try req.parameters.next(User.self).flatMap { user in
+			try req.view().render("addProfilePicture", ["title": "Add Profile Picture", "username": user.name])
+		}
+	}
+	
+	
+	func addProfilePicturePostHandler(_ req: Request) throws -> Future<Response> {
+		
+		return try flatMap(to: Response.self, req.parameters.next(User.self), req.content.decode(ImageUploadData.self)) { user, imageData in
+			let workPath = try req.make(DirectoryConfig.self).workDir //get the current directory of the app
+			let name = try "\(user.requireID())-\(UUID().uuidString).jpg"//create a unique name for the profile picture
+			let path = workPath + self.imageFolder + name // set up the path of the file to save
+			FileManager().createFile(atPath: path, contents: imageData.picture, attributes: nil)//save the file on disk
+			user.profilePicture = name
+			let redirect = try req.redirect(to: "/users/\(user.requireID())")
+			return user.save(on: req).transform(to: redirect)
+		}
+		
+	}
+	
+	func getUsersProfilePictureHandler(_ req: Request) throws -> Future<Response> {
+		
+		return try req.parameters.next(User.self)
+			.flatMap(to: Response.self) { user in //get the user from the request's parameters
+				guard let filename = user.profilePicture else { throw Abort(.notFound) }
+				let path = try req.make(DirectoryConfig.self).workDir + self.imageFolder + filename//get the path of the profile picture
+				return try req.streamFile(at: path)//reads the file
+		}
+		
+	}
+	
 
 	
 }
@@ -363,11 +405,11 @@ struct AcronymContext: Encodable {
 	let categories: Future<[Category]>
 }
 
-
-struct UserContext {
+struct UserContext: Encodable {
 	let title: String
 	let user: User
 	let acronyms: [Acronym] //created by the user
+	let authenticatedUser: User?
 }
 
 struct AllUsersContext: Encodable {
@@ -406,16 +448,12 @@ struct CreateAcronymData: Content {
 }
 
 struct LoginContext: Encodable {
-	
 	let title = "Log In"
 	let loginError: Bool
-	
 	init(loginError: Bool = false) {
 		self.loginError = loginError
 	}
-	
 }
-
 
 struct LoginPostData: Content {
 	let username: String
@@ -423,13 +461,11 @@ struct LoginPostData: Content {
 }
 
 struct RegisterContext: Encodable {
-	
 	let title = "Register"
 	let message: String?
 	init(message: String? = nil) {
 		self.message = message
 	}
-	
 }
 
 struct RegisterData: Content {
@@ -442,6 +478,7 @@ struct RegisterData: Content {
 
 
 extension RegisterData: Validatable, Reflectable {
+	
 	
 	static func validations() throws -> Validations<RegisterData> {
 		
@@ -475,5 +512,9 @@ struct ResetPasswordContext: Encodable {
 struct ResetPasswordData: Content {
 	let password: String
 	let confirmPassword: String
+}
+
+struct ImageUploadData: Content {
+	var picture: Data
 }
 
