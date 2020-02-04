@@ -12,6 +12,7 @@
 	}
 
 	<form method="post">
+		
 		<div class="form-group">
 			<label for="username">Username</label>
 			<input type="text" name="username" class="form-control" id="username"/>
@@ -21,6 +22,7 @@
 			<input type="password" name="password" class="form-control" id="password"/>
 		</div>
 		<button type="submit" class="btn btn-primary">Log In</button>
+		
 	</form>
 	<a href="/login-google">
 		<img class="mt-3" src="/images/sign-in-with-google.png" alt="Sign In With Google">
@@ -28,6 +30,11 @@
 	<a href="/login-github">
 		<img class="mt-3" src="/images/sign-in-with-github.png" alt="Sign In With GitHub">
 	</a>
+	<br />
+	<a href="/forgottenPassword">
+		Forgotten your password?
+	</a>
+
 
 
 }

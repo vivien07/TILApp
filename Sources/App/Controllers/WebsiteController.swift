@@ -1,6 +1,7 @@
 import Vapor
 import Leaf
 import Authentication
+import SendGrid
 
 
 struct WebsiteController: RouteCollection {
@@ -20,6 +21,10 @@ struct WebsiteController: RouteCollection {
 		authSessionRoutes.post("logout", use: logoutHandler) // "/logout"
 		authSessionRoutes.get("register", use: registerHandler) // "/register"
 		authSessionRoutes.post(RegisterData.self, at: "register", use: registerPostHandler)
+		authSessionRoutes.get("forgottenPassword", use: forgottenPasswordHandler) // "/forgottenPassword"
+		authSessionRoutes.post("forgottenPassword", use: forgottenPasswordPostHandler) // "/forgottenPassword"
+		authSessionRoutes.get("resetPassword", use: resetPasswordHandler) // "/resetPassword"
+		authSessionRoutes.post(ResetPasswordData.self, at: "resetPassword", use: resetPasswordPostHandler) // "/resetPassword"
 		
 		let protectedRoutes = authSessionRoutes.grouped(RedirectMiddleware<User>(path: "/login"))//unauthenticated users are redirected to "/login"
 		protectedRoutes.get("acronyms", "create", use: createAcronymHandler) // "/acronyms/create"
@@ -246,7 +251,6 @@ struct WebsiteController: RouteCollection {
 	
 	func registerPostHandler(_ req: Request, data: RegisterData) throws -> Future<Response> {
 		
-		
 		do {
 			try data.validate() //Validates the model, throwing an error if any of the validations fail
 		} catch (let error) {
@@ -261,15 +265,85 @@ struct WebsiteController: RouteCollection {
 		}
 		
 		let password = try BCrypt.hash(data.password)
-		let user = User(name: data.name, username: data.username, password: password)
+		let user = User(name: data.name, username: data.username, password: password, email: data.emailAddress)
 		return user.save(on: req).map(to: Response.self) { user in
 			try req.authenticateSession(user)//when they register, users are automatically logged in
 			return req.redirect(to: "/")
 		}
 		
 	}
-
 	
+	func forgottenPasswordHandler(_ req: Request) throws -> Future<View> {
+		return try req.view().render("forgottenPassword", ["title": "Reset Your Password"])
+	}
+	
+	
+	func forgottenPasswordPostHandler(_ req: Request) throws -> Future<View> {
+		
+		let email = try req.content.syncGet(String.self, at: "email")
+		return User.query(on: req).filter(\.email == email).first().flatMap(to: View.self) { user in
+			//ensures there is a user associated with the email
+			guard let user = user else {
+				return try req.view().render("forgottenPasswordConfirmed", ["title": "Password Reset Email Sent"])
+			}
+			
+			let resetTokenString = try CryptoRandom().generateData(count: 32).base32EncodedString() //generate a token string
+			let resetToken = try ResetPasswordToken(token: resetTokenString, userID: user.requireID())
+			return resetToken.save(on: req).flatMap(to: View.self) { _ in
+				let emailContent = """
+				<p>You've requested to reset your password. <a href=\"http://localhost:8080/resetPassword?token=\(resetTokenString)\">Click here</a> to reset your password.</p>
+				"""
+				let emailAddress = EmailAddress(email: user.email, name: user.name)
+				let fromEmail = EmailAddress(email: "vapor@gmail.com", name: "Vapor TIL")
+				let emailConfig = Personalization(to: [emailAddress], subject: "Reset Your Password")
+				let email = SendGridEmail(personalizations: [emailConfig], from: fromEmail, content: [["type": "text/html",
+																									   "value": emailContent]])
+				let sendGridClient = try req.make(SendGridClient.self) //send the email
+				return try sendGridClient.send([email], on: req.eventLoop).flatMap(to: View.self) { _ in
+					return try req.view().render("forgottenPasswordConfirmed", ["title": "Password Reset Email Sent"])
+				}
+			}
+			
+		}
+		
+	}
+	
+	func resetPasswordHandler(_ req: Request) throws -> Future<View> {
+		
+		//ensures the request contains a token as a parameter
+		guard let token = req.query[String.self, at: "token"] else {
+			return try req.view().render("resetPassword", ResetPasswordContext(error: true))
+		}
+		return ResetPasswordToken.query(on: req).filter(\.token == token).first().map(to: ResetPasswordToken.self) { token in
+			
+			guard let token = token else { throw Abort.redirect(to: "/") }
+			return token
+			}.flatMap { token in
+				return token.user.get(on: req).flatMap { user in
+					try req.session().set("ResetPasswordUser", to: user)
+					return token.delete(on: req)
+				}
+			}.flatMap {
+				try req.view().render("resetPassword", ResetPasswordContext())
+			}
+		
+	}
+	
+	
+	func resetPasswordPostHandler(_ req: Request, data: ResetPasswordData) throws -> Future<Response> {
+		
+		guard data.password == data.confirmPassword else {
+			return try req.view().render("resetPassword", ResetPasswordContext(error: true)).encode(for: req)
+		}
+		let resetPasswordUser = try req.session().get("ResetPasswordUser", as: User.self)
+		try req.session()["ResetPasswordUser"] = nil
+		let newPassword = try BCrypt.hash(data.password)
+		resetPasswordUser.password = newPassword //updates the user's password with the new hashed password
+		return resetPasswordUser.save(on: req).transform(to: req.redirect(to: "/login"))
+		
+	}
+	
+
 	
 }
 
@@ -363,6 +437,7 @@ struct RegisterData: Content {
 	let username: String
 	let password: String
 	let confirmPassword: String
+	let emailAddress: String
 }
 
 
@@ -371,9 +446,10 @@ extension RegisterData: Validatable, Reflectable {
 	static func validations() throws -> Validations<RegisterData> {
 		
 		var validations = Validations(RegisterData.self)
-		try validations.add(\.name, .ascii) //ensure the name contains only ASCII characters
-		try validations.add(\.username, .alphanumeric && .count(3...)) //ensure the username contains only alphanumerics characters
-		try validations.add(\.password, .count(8...)) //ensure the password is at least 8 characters long
+		try validations.add(\.name, .ascii) //ensures the name contains only ASCII characters
+		try validations.add(\.username, .alphanumeric && .count(3...)) //ensures the username contains only alphanumerics characters
+		try validations.add(\.password, .count(8...)) //ensures the password is at least 8 characters long
+		try validations.add(\.emailAddress, .email)//ensures the email provided is valid
 		//ensures the password matches with the confirmation
 		validations.add("passwords match") { model in
 			guard model.password == model.confirmPassword else {
@@ -384,5 +460,20 @@ extension RegisterData: Validatable, Reflectable {
 		
 	}
 	
+}
+
+struct ResetPasswordContext: Encodable {
+	
+	let title = "Reset Password"
+	let error: Bool?
+	init(error: Bool? = false) {
+		self.error = error
+	}
+	
+}
+
+struct ResetPasswordData: Content {
+	let password: String
+	let confirmPassword: String
 }
 

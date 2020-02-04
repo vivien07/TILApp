@@ -12,7 +12,7 @@ struct ImperialController: RouteCollection {
 						 scope: ["profile", "email"], completion: processGoogleLogin)// "/login-google" is the route the app uses to allow users to log in via Google
 		
 		guard let githubCallbackURL = Environment.get("GITHUB_CALLBACK_URL") else { fatalError("GitHub callback URL not set") }
-		try router.oAuth(from: GitHub.self, authenticate: "login-github", callback: githubCallbackURL, completion: processGitHubLogin)
+		try router.oAuth(from: GitHub.self, authenticate: "login-github", callback: githubCallbackURL,scope: ["user:email"], completion: processGitHubLogin)
 	
 	}
 	
@@ -26,7 +26,7 @@ struct ImperialController: RouteCollection {
 				.first().flatMap(to: ResponseEncodable.self) { foundUser in
 					guard let existingUser = foundUser else {
 						//creates a new user and saves it in the session
-						let user = User(name: userInfo.name, username: userInfo.email, password: UUID().uuidString)
+						let user = User(name: userInfo.name, username: userInfo.email, password: UUID().uuidString, email: userInfo.email)
 						return user.save(on: request).map(to: ResponseEncodable.self) { user in
 							try request.authenticateSession(user)
 							return request.redirect(to: "/")
@@ -43,14 +43,15 @@ struct ImperialController: RouteCollection {
 	
 	func processGitHubLogin(request: Request, token: String) throws -> Future<ResponseEncodable> {
 		
-		return try GitHub.getUser(on: request).flatMap(to: ResponseEncodable.self) { userInfo in
+		return try flatMap(to: ResponseEncodable.self, GitHub.getUser(on: request), GitHub.getEmails(on: request)) { userInfo,emailInfo  in
 			
 			return User.query(on: request)
 				.filter(\.username == userInfo.login)//checks if the user exists in the DB
 				.first().flatMap(to: ResponseEncodable.self) { foundUser in
 					guard let existingUser = foundUser else {
 						//creates a new user and saves it in the session
-						let user = User(name: userInfo.name, username: userInfo.login, password: UUID().uuidString)
+						let user = User(name: userInfo.name, username: userInfo.login,
+										password: UUID().uuidString, email: emailInfo[0].email)
 						return user.save(on: request).map(to: ResponseEncodable.self) { user in
 							try request.authenticateSession(user)
 							return request.redirect(to: "/")
@@ -77,6 +78,10 @@ struct GoogleUserInfo: Content {
 struct GitHubUserInfo: Content {
 	let login: String
 	let name: String
+}
+
+struct GitHubEmailInfo: Content {
+	let email: String
 }
 
 
@@ -120,6 +125,26 @@ extension GitHub {
 				}
 			}
 			return try response.content.syncDecode(GitHubUserInfo.self) //Parses a Decodable type from this HTTP message
+		}
+		
+	}
+	
+	//gets a user's emails from GitHub
+	static func getEmails(on request: Request) throws -> Future<[GitHubEmailInfo]> {
+		
+		var headers = HTTPHeaders()
+		headers.bearerAuthorization = try BearerAuthorization(token: request.accessToken())
+		let githubUserAPIURL = "https://api.github.com/user/emails"
+		//Sends an HTTP GET Request to a server
+		return try request.client().get(githubUserAPIURL, headers: headers).map(to: [GitHubEmailInfo].self) { response in
+			guard response.http.status == .ok else {
+				if response.http.status == .unauthorized {
+					throw Abort.redirect(to: "/login-github")
+				} else {
+					throw Abort(.internalServerError)
+				}
+			}
+			return try response.content.syncDecode([GitHubEmailInfo].self)
 		}
 		
 	}

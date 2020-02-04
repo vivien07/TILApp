@@ -2,6 +2,7 @@ import FluentPostgreSQL
 import Vapor
 import Leaf
 import Authentication
+import SendGrid
 
 
 
@@ -13,6 +14,7 @@ public func configure(_ config: inout Config, _ env: inout Environment,_ service
     try services.register(FluentPostgreSQLProvider())
 	try services.register(LeafProvider())
 	try services.register(AuthenticationProvider())
+	try services.register(SendGridProvider())
 
     // Register routes to the router
     let router = EngineRouter.default()
@@ -41,11 +43,16 @@ public func configure(_ config: inout Config, _ env: inout Environment,_ service
 	migrations.add(model: AcronymCategoryPivot.self, database: .psql)
 	migrations.add(model: Token.self, database: .psql)
 	migrations.add(migration: AdminUser.self, database: .psql)
+	migrations.add(model: ResetPasswordToken.self, database: .psql)
     services.register(migrations)
 	var commandConfig = CommandConfig.default()
 	commandConfig.useFluentCommands()
 	services.register(commandConfig)
 	config.prefer(LeafRenderer.self, for: ViewRenderer.self)
 	config.prefer(MemoryKeyedCache.self, for: KeyedCache.self)
+	
+	guard let sendGridAPIKey = Environment.get("SENDGRID_API_KEY") else { fatalError("No Send Grid API Key specified") }
+	let sendGridConfig = SendGridConfig(apiKey: sendGridAPIKey)
+	services.register(sendGridConfig)
 	
 }

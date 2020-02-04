@@ -9,11 +9,13 @@ final class User: Codable { //A type that can convert itself into and out of an 
 	var name: String
 	var username: String
 	var password: String
+	var email: String
 	
-	init(name: String, username: String, password: String) {
+	init(name: String, username: String, password: String, email: String) {
 		self.name = name
 		self.username = username
 		self.password = password
+		self.email = email
 	}
 	
 	//inner class to represent a public view of User
@@ -44,7 +46,8 @@ extension User: Migration {
 		
 		return Database.create(self, on: connection) { builder in
 			try addProperties(to: builder)
-			builder.unique(on: \.username) //Adds a unique constraint to a field.
+			builder.unique(on: \.username) //Adds a unique key constraint to a field.
+			builder.unique(on: \.email)
 		}
 		
 	}
@@ -104,7 +107,7 @@ struct AdminUser: Migration {
 		
 		let password = try? BCrypt.hash("password")
 		guard let hashedPassword = password else { fatalError("Failed to create admin user") }
-		let user = User(name: "Admin", username: "admin", password: hashedPassword)
+		let user = User(name: "Admin", username: "admin", password: hashedPassword, email: "admin@localhost.local")
 		return user.save(on: connection).transform(to: ())
 		
 	}
